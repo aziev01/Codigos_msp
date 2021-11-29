@@ -1,0 +1,1 @@
+"./control.obj" "../lnk_msp430f6747a.cmd" -llibmath.a -llibc.a 

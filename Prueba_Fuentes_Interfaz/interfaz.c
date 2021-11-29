@@ -13,20 +13,29 @@ void encender_apagar_interfaz(int);
 int rb = 0;
 int reg_botones[24];
 
+int buzzer = 0;
 
-int buzzer=0;
+//Variables INIT
+int contador_init = 0;
+int led_aux_falla = 0;
+int led_main_falla = 0;
+
+int led_aux_falla_ant = 0;
+int led_main_falla_ant = 0;
+
+int init_interfaz_ready = 1;
 
 //VARIABLES PARPADEO FALLA
 int flag_a[24] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                    1, 1, 1, 1 };
 int reg_falla[24] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                       0, 0, 0, 0, 0 };
-int reg_falla_ant[24]= { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                         0, 0, 0, 0, 0 };
+int reg_falla_ant[24] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          0, 0, 0, 0, 0, 0 };
 int j6;
 unsigned int contador = 0;
 int parpadeo = 1;
-int flag_test=0;
+int flag_test = 0;
 
 // VARIABLES DIMMER
 unsigned int i; //Counter
@@ -68,8 +77,8 @@ int j4 = 0;
 int j3 = 0;
 int j5 = 0;
 
-int main_supply=0;
-int main_supply_ant=1;
+int main_supply = 0;
+int main_supply_ant = 1;
 
 // VARIABLES ENCENDER-APAGAR INTERFAZ
 int apagar_stat = 0;
@@ -84,7 +93,6 @@ int main(void)
 
     //P6DIR |= BIT0;
     //P6OUT &= ~BIT0;
-
 
     //ILUMINACION BOTONES FUNCIONES
     P3DIR |= BIT3;
@@ -140,7 +148,6 @@ int main(void)
     TA0CCTL1 |= CCIE;                          // CCR0 interrupt enabled FLAG2
     //TA0CCTL2 |= CCIE;                          // CCR0 interrupt enabled
 
-
     //Inicializacion reg Timer TA0 --Rapido
     TA0CTL = TASSEL_1 + MC_1 + TACLR + ID_1;       // SMCLK, contmode, clear TAR
     TA0CCR0 = a * 10;
@@ -148,25 +155,75 @@ int main(void)
     //TA0CCR2 = a*10;
     TA0EX0 = TAIDEX_2;
 
-
     //Inicializacion reg Timer TA1 --Lento
     TA1CCTL0 |= CCIE;                          // CCR0 interrupt enabled
     TA1CTL = TASSEL_1 + MC_1 + ID_3 + TACLR;       // SMCLK, contmode, clear TAR
     TA1EX0 = TAIDEX_7;
     TA1CCR0 = 51200;
 
-
-
     //PUERTO SALIDA BUZZER
     P3DIR |= BIT2;
     P3OUT &= ~BIT2;
 
+    init_interfaz_ready = 1;
     __bis_SR_register(GIE); // Enable Global Interrupts
 
-    _delay_cycles(60000);
+    // Inicio de rutina para comprobar fuentes
+
+    UCA0TXBUF = 0xF3; //CONSULTA POR LAS FUENTES
+    UCA0IE |= UCTXIE;
+
+    P3OUT |= BIT4;  //Enciende led fuente main
+    P3OUT |= BIT5;  //Enciende led fuente aux
+
+    while (init_interfaz_ready) //Esta accion se realiza hasta que se envia el MSG de termino desde la tarjeta de control
+    {
+        if (led_main_falla == 1)
+        {
+            P3OUT &= ~BIT4; // Si existe falla en main se apaga el led
+
+        }
+
+        if (led_aux_falla == 1)
+        {
+            P3OUT &= ~BIT5;     // Si existe falla en aux se apaga el led
+        }
+
+        if (contador_init > 9)
+        {
+            init_interfaz_ready = 0;    //Realiza la accion 10 veces
+        }
+    }
+
+    UCA0TXBUF = 0xF4; //Envia MSG para que la tarjeta de control pueda avanzar a la rutina normal
+    UCA0IE |= UCTXIE;
+
+    // Termino de rutina de inicializacion
+    //////////////////////////////////////////////////////////////////////////////////
 
     while (1)
     {
+
+        //Revisa estado fuentes
+        if ((led_main_falla == 1) &&(led_main_falla_ant == 0))
+        {
+            buzzer = 1;
+            led_main_falla_ant = led_main_falla;
+        }
+        else
+        {
+            led_main_falla_ant = led_main_falla;
+        }
+
+        if ((led_aux_falla == 1) && (led_aux_falla_ant == 0))
+        {
+            buzzer = 1;
+            led_aux_falla_ant = led_aux_falla;
+        }
+        else
+        {
+            led_aux_falla_ant = led_aux_falla;
+        }
 
         // LEER BOTONES
         reg_boton_p8[0] = P5IN & BIT0;
@@ -224,8 +281,6 @@ int main(void)
         reg_botones[22] = reg_boton_p10[6];
         reg_botones[23] = reg_boton_p10[7];
 
-
-
 //Envio msg de Encendido-Apagagado de botones 1-8
         for (h2 = 0; h2 < 8; h2++)
         {
@@ -244,7 +299,6 @@ int main(void)
             }
             reg_boton_p8_ant[h2] = reg_boton_p8[h2];
         }
-
 
 //Envio msg de Encendido-Apagagado de botones 9-16
         for (h3 = 0; h3 < 8; h3++)
@@ -283,7 +337,8 @@ int main(void)
         }
 
 //Deteccion Falla por registros (detecta cantos de fallas), si se detecta alguna se activa el buzzer
-        for (j6=0;j6<24;j6++){
+        for (j6 = 0; j6 < 24; j6++)
+        {
             if ((reg_falla[j6] == 1) && (reg_falla_ant[j6] == 0))
             {
                 buzzer = 1;
@@ -297,12 +352,13 @@ int main(void)
 
 //Si el BTN de APAGAR se enciende, deja la interfaz apagada hasta que se vuelva a presionar
         encender_apagar_interfaz(apagar_stat);
-//Si el BTN de TEST se presiona ilumina los leds y enciende el buzzer        
+//Si el BTN de TEST se presiona ilumina los leds y enciende el buzzer
         test_leds();
-                if (flag_test==1){
-                    P3OUT &= ~BIT2; //Enciende el buzzer para la accion de test
-                    flag_test=0;
-                }
+        if (flag_test == 1)
+        {
+            P3OUT &= ~BIT2; //Enciende el buzzer para la accion de test
+            flag_test = 0;
+        }
 
     }
 }
@@ -529,19 +585,20 @@ void TIMER1_A0_ISR(void)
         parpadeo = 1;
     }
 
-
-    if ((buzzer==1) && ((P3OUT & BIT2)>0)){
-        P3OUT &=~BIT2;
+    if ((buzzer == 1) && ((P3OUT & BIT2) > 0))
+    {
+        P3OUT &= ~BIT2;
     }
 
-    else if ((buzzer==1) && ((P3OUT & BIT2)==0)){
-        P3OUT |=BIT2;
+    else if ((buzzer == 1) && ((P3OUT & BIT2) == 0))
+    {
+        P3OUT |= BIT2;
     }
 
-    else if (buzzer==0){
-        P3OUT &=~BIT2;
+    else if (buzzer == 0)
+    {
+        P3OUT &= ~BIT2;
     }
-
 
 }
 
@@ -571,7 +628,7 @@ void Port_2(void)
         }
         break;
 
-    // BTN DIMMER
+        // BTN DIMMER
     case 0x0C:
         n_button = 2;
         debounced_button = debounce_button(n_button);
@@ -610,18 +667,15 @@ void Port_2(void)
         //BTN BUZZER
     case 0x0E:
 
-         n_button = 3;
-         debounced_button = debounce_button(n_button);
-         if (debounced_button == 1)
-         {
-         buzzer = 0;
-         P3OUT &=~BIT2;
+        n_button = 3;
+        debounced_button = debounce_button(n_button);
+        if (debounced_button == 1)
+        {
+            buzzer = 0;
+            P3OUT &= ~BIT2;
 
-
-         }
-         break;
-
-
+        }
+        break;
 
     default:
         break;
@@ -684,7 +738,7 @@ void test_leds()
         P9OUT |= 0xff; //Enciende leds botones puerto 9
         P10OUT |= 0xff;  //Enciende leds botones puerto 10
         //_delay_cycles(10);
-        flag_test=1;
+        flag_test = 1;
     }
 // Se debe encender todos los puertos correspondientes a leds
 }
@@ -706,7 +760,6 @@ void encender_apagar_interfaz( c4)
         P8OUT &= 0x00;
         P9OUT &= 0x00;
         P10OUT &= 0x00;
-
 
         //Apagar todos los reles
         UCA0TXBUF = 0xF0;
@@ -730,24 +783,18 @@ void encender_apagar_interfaz( c4)
         {
 
             //Apagar buzzer
-            buzzer=0;
-            P3OUT &=~BIT2;
-
-
+            buzzer = 0;
+            P3OUT &= ~BIT2;
 
         }
 
         _delay_cycles(50000);
         break;
 
-
-
     default:
         break;
     }
 }
-
-
 
 void enviar_encender_rele(int c1)
 {
@@ -1019,149 +1066,149 @@ void recepcion_senal_alarma(int c3)
     //RECIBE ESTADO FUENTES
     case 0x60:
         P3OUT &= ~BIT4;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0x61:
         P3OUT &= ~BIT5;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0x70:
         P3OUT |= BIT4;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0x71:
         P3OUT |= BIT5;
-        buzzer=0;
+        buzzer = 0;
         break;
 
         //RECIBE MSG APAGAR PARPADEO
     case 0xA0:
         reg_falla[0] = 0; //0x00
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA1:
         reg_falla[1] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA2:
         reg_falla[2] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA3:
         reg_falla[3] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA4:
         reg_falla[4] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA5:
         reg_falla[5] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA6:
         reg_falla[6] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA7:
         reg_falla[7] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA8:
         reg_falla[8] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xA9:
         reg_falla[9] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAA:
         reg_falla[10] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAB:
         reg_falla[11] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAC:
         reg_falla[12] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAD:
         reg_falla[13] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAE:
         reg_falla[14] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xAF:
         reg_falla[15] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB0:
         reg_falla[16] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB1:
         reg_falla[17] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB2:
         reg_falla[18] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB3:
         reg_falla[19] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB4:
         reg_falla[20] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB5:
         reg_falla[21] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB6:
         reg_falla[22] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
     case 0xB7:
         reg_falla[23] = 0;
-        buzzer=0;
+        buzzer = 0;
         break;
 
         // ENCENDER PARPADEO
     case 0xC0:
         reg_falla[0] = 1; //0x00
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC1:
@@ -1181,103 +1228,133 @@ void recepcion_senal_alarma(int c3)
 
     case 0xC4:
         reg_falla[4] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC5:
         reg_falla[5] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC6:
         reg_falla[6] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC7:
         reg_falla[7] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC8:
         reg_falla[8] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xC9:
         reg_falla[9] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCA:
         reg_falla[10] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCB:
         reg_falla[11] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCC:
         reg_falla[12] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCD:
         reg_falla[13] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCE:
         reg_falla[14] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xCF:
         reg_falla[15] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD0:
         reg_falla[16] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD1:
         reg_falla[17] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD2:
         reg_falla[18] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD3:
         reg_falla[19] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD4:
         reg_falla[20] = 1;
-        buzzer=1;
+        buzzer = 1;
         //P2OUT|=BIT3;
         break;
 
     case 0xD5:
         reg_falla[21] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD6:
         reg_falla[22] = 1;
-        buzzer=1;
+        buzzer = 1;
         break;
 
     case 0xD7:
         reg_falla[23] = 1;
-        buzzer=1;
+        buzzer = 1;
+        break;
+
+        // MSG DE INIT
+    case 0xE3:  //MSG falla main
+        led_main_falla = 1;
+        //P3OUT &= ~BIT4;
+        contador_init += 1;
+        //buzzer = 1;
+        break;
+
+    case 0xE4:  //MSG falla aux
+        led_aux_falla = 1;
+        //P3OUT &=~BIT5;
+        contador_init += 1;
+        //buzzer = 1;
+
+        break;
+
+    case 0xE5:  //MSG ok main
+        led_main_falla = 0;
+        //P3OUT |= BIT4;
+        contador_init += 1;
+        //buzzer = 0;
+        break;
+
+    case 0xE6:  //MSG ok aux
+        led_aux_falla = 0;
+        //P3OUT |=BIT5;
+        contador_init += 1;
+        //buzzer = 0;
         break;
 
     default:

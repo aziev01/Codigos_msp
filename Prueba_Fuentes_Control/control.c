@@ -26,6 +26,9 @@ int h2 = 0;
 int j3 = 0;
 int j5 = 0;
 
+int init_control_ready = 1;
+int init_interfaz = 1;
+
 //VARIABLES SUPERVISION ALIMENTACION DE FUENTES
 int fuente_aux = 0;
 int fuente_main = 0;
@@ -94,10 +97,37 @@ int main(void)
     TA1EX0 = TAIDEX_7;
     TA1CCR0 = 51200;
 
+
+    init_control_ready = 1;
+    init_interfaz = 1;
+
     volatile unsigned int i;        // volatile to prevent optimization
     __bis_SR_register(GIE); // Habilita interrupciones
 
-    _delay_cycles(30000);
+
+    while (init_interfaz)   //Termina el while cuando se recibe 0xF3 desde la Interfaz
+    {
+        fuente_main = (P1IN & BIT0);
+        fuente_aux = (P1IN & BIT1);
+    }
+
+    while (init_control_ready)
+    {
+
+        if (fuente_main == 0)
+        {
+            UCA0TXBUF = 0xE3;
+            UCA0IE |= UCTXIE;
+        }
+
+        if (fuente_aux == 0)
+        {
+            UCA0TXBUF = 0xE4;
+            UCA0IE |= UCTXIE;
+        }
+    }
+
+
     while (1)
     {
 
@@ -185,27 +215,27 @@ void TIMER1_A0_ISR(void)
     fuente_main = (P1IN & BIT0);
     fuente_aux = (P1IN & BIT1);
 
-    if (fuente_main > 0 && fuente_main_ant == 0)
+    if (fuente_main > 0 && fuente_main_ant == 0) //Fuente main ok
     {
-        UCA0TXBUF = 0x70;
+        UCA0TXBUF = 0xE5;
         UCA0IE |= UCTXIE;
 
     }
-    else if (fuente_main == 0 && fuente_main_ant > 0)
+    else if (fuente_main == 0 && fuente_main_ant > 0) //Fuente main falla
     {
-        UCA0TXBUF = 0x60;
+        UCA0TXBUF = 0xE3;
         UCA0IE |= UCTXIE;
     }
 
-    if (fuente_aux > 0 && fuente_aux_ant == 0)
+    if (fuente_aux > 0 && fuente_aux_ant == 0)  //Fuente aux ok
     {
-        UCA0TXBUF = 0x71;
+        UCA0TXBUF = 0xE6;
         UCA0IE |= UCTXIE;
 
     }
-    else if (fuente_aux == 0 && fuente_aux_ant > 0)
+    else if (fuente_aux == 0 && fuente_aux_ant > 0) //Fuente aux falla
     {
-        UCA0TXBUF = 0x61;
+        UCA0TXBUF = 0xE4;
         UCA0IE |= UCTXIE;
     }
 
@@ -532,6 +562,14 @@ void encender_apagar_rele(int c)
             reg_falla_ant[g1] = 0;
             contador[g1] = 0;
         }
+        break;
+
+    case 0xF3:  //Termino init interfaz
+        init_interfaz = 0;
+        break;
+
+    case 0xF4:  //Termino init control
+        init_control_ready = 0;
         break;
 
     default:
